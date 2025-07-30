@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, abort, url_for
 import pandas as pd
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 EXCEL_FILE = "CustomerOrders.xlsx"
 PER_PAGE = 500
@@ -26,7 +26,7 @@ except Exception as e:
 def index():
     return "OK", 200
 
-# 📊 CustomerOrders endpoint with date range logic
+# 📊 CustomerOrders endpoint with start_date & end_date filtering
 @app.route("/CustomerOrders", strict_slashes=False)
 def get_data():
     # Parse page
@@ -37,34 +37,36 @@ def get_data():
     except ValueError:
         return jsonify({"error": "Invalid 'page' parameter"}), 400
 
-    last_load = request.args.get("last_load")
+    start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
-
-    # Ensure both are provided
-    if (last_load and not end_date_str) or (end_date_str and not last_load):
-        return jsonify({"error": "Both 'last_load' and 'end_date' must be provided"}), 400
 
     filtered_data = data
 
-    if last_load and end_date_str:
-        try:
-            # Compute range
-            last_loaded_date = pd.to_datetime(last_load)
-            start_date = last_loaded_date + timedelta(days=1)
+    try:
+        df_filtered = pd.DataFrame(data)
+        df_filtered["OrderDate"] = pd.to_datetime(df_filtered["OrderDate"], errors='coerce')
+
+        if start_date_str and not end_date_str:
+            return jsonify({"error": "'end_date' is required when 'start_date' is provided"}), 400
+
+        elif start_date_str and end_date_str:
+            start_date = pd.to_datetime(start_date_str)
             end_date = pd.to_datetime(end_date_str)
-
-            # Filter data
-            df_filtered = pd.DataFrame(data)
-            df_filtered["OrderDate"] = pd.to_datetime(df_filtered["OrderDate"], errors='coerce')
-
             df_filtered = df_filtered[
                 (df_filtered["OrderDate"] >= start_date) &
                 (df_filtered["OrderDate"] <= end_date)
             ]
 
-            filtered_data = df_filtered.to_dict(orient="records")
-        except Exception as e:
-            return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+        elif not start_date_str and end_date_str:
+            end_date = pd.to_datetime(end_date_str)
+            df_filtered = df_filtered[df_filtered["OrderDate"] <= end_date]
+
+        # else: no filters → return all
+
+        filtered_data = df_filtered.to_dict(orient="records")
+
+    except Exception as e:
+        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
 
     # Pagination
     total_rows = len(filtered_data)
@@ -78,7 +80,7 @@ def get_data():
         "per_page": PER_PAGE,
         "total_rows": total_rows,
         "has_more": has_more,
-        "next_page": url_for('get_data', page=page + 1, last_load=last_load, end_date=end_date_str, _external=True) if has_more and last_load and end_date_str else None,
+        "next_page": url_for('get_data', page=page + 1, start_date=start_date_str, end_date=end_date_str, _external=True) if has_more else None,
         "data": paginated
     })
 
