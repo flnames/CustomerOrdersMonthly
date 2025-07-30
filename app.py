@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 EXCEL_FILE = "CustomerOrders.xlsx"
-PER_PAGE = 5000
+PER_PAGE = 500
 
 app = Flask(__name__)
 
