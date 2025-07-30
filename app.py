@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify, abort, url_for
 import pandas as pd
 import os
+from datetime import datetime, timedelta
 
 EXCEL_FILE = "CustomerOrders.xlsx"
-PER_PAGE = 500
+PER_PAGE = 5000
 
 app = Flask(__name__)
 
@@ -25,7 +26,7 @@ except Exception as e:
 def index():
     return "OK", 200
 
-# 📊 CustomerOrders endpoint with optional month+year filtering
+# 📊 CustomerOrders endpoint with date range logic
 @app.route("/CustomerOrders", strict_slashes=False)
 def get_data():
     # Parse page
@@ -36,35 +37,34 @@ def get_data():
     except ValueError:
         return jsonify({"error": "Invalid 'page' parameter"}), 400
 
-    # Get filter parameters
-    month = request.args.get("month")
-    year = request.args.get("year")
+    last_load = request.args.get("last_load")
+    end_date_str = request.args.get("end_date")
 
-    # Enforce month+year must be provided together
-    if (month and not year) or (year and not month):
-        return jsonify({"error": "Both 'month' and 'year' parameters are required together"}), 400
+    # Ensure both are provided
+    if (last_load and not end_date_str) or (end_date_str and not last_load):
+        return jsonify({"error": "Both 'last_load' and 'end_date' must be provided"}), 400
 
-    # Filter if both provided
     filtered_data = data
-    if month and year:
+
+    if last_load and end_date_str:
         try:
-            month = int(month)
-            year = int(year)
+            # Compute range
+            last_loaded_date = pd.to_datetime(last_load)
+            start_date = last_loaded_date + timedelta(days=1)
+            end_date = pd.to_datetime(end_date_str)
 
-            if not (1 <= month <= 12):
-                raise ValueError("Month must be between 1 and 12.")
-
+            # Filter data
             df_filtered = pd.DataFrame(data)
             df_filtered["OrderDate"] = pd.to_datetime(df_filtered["OrderDate"], errors='coerce')
 
             df_filtered = df_filtered[
-                (df_filtered["OrderDate"].dt.month == month) &
-                (df_filtered["OrderDate"].dt.year == year)
+                (df_filtered["OrderDate"] >= start_date) &
+                (df_filtered["OrderDate"] <= end_date)
             ]
 
             filtered_data = df_filtered.to_dict(orient="records")
         except Exception as e:
-            return jsonify({"error": f"Invalid month/year filter: {str(e)}"}), 400
+            return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
 
     # Pagination
     total_rows = len(filtered_data)
@@ -78,7 +78,7 @@ def get_data():
         "per_page": PER_PAGE,
         "total_rows": total_rows,
         "has_more": has_more,
-        "next_page": url_for('get_data', page=page + 1, month=month, year=year, _external=True) if has_more and month and year else None,
+        "next_page": url_for('get_data', page=page + 1, last_load=last_load, end_date=end_date_str, _external=True) if has_more and last_load and end_date_str else None,
         "data": paginated
     })
 
