@@ -61,9 +61,19 @@ def get_data():
             end_date = pd.to_datetime(end_date_str)
             df_filtered = df_filtered[df_filtered["OrderDate"] <= end_date]
 
-        # else: no filters → return all
+        # Sort after filtering
+        df_filtered = df_filtered.sort_values(by="OrderDate", ascending=True)
 
+        # Convert to dict
         filtered_data = df_filtered.to_dict(orient="records")
+
+        # Determine start_date to include in response
+        if start_date_str:
+            start_date_to_return = start_date_str
+        elif not df_filtered.empty:
+            start_date_to_return = df_filtered["OrderDate"].iloc[0].strftime("%Y-%m-%d")
+        else:
+            start_date_to_return = None
 
     except Exception as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
@@ -80,6 +90,7 @@ def get_data():
         "per_page": PER_PAGE,
         "total_rows": total_rows,
         "has_more": has_more,
+        "start_date": start_date_to_return,
         "next_page": url_for('get_data', page=page + 1, start_date=start_date_str, end_date=end_date_str, _external=True) if has_more else None,
         "data": paginated
     })
